@@ -1,0 +1,957 @@
+import { useState, useEffect, useRef, useCallback } from "react";
+import { useNavigate } from "react-router";
+import { motion, AnimatePresence } from "motion/react";
+import svgPaths from "../../imports/svg-v59w0vx39v";
+import { productCatalog } from "../data/product-catalog";
+import { type BasedOnFactor } from "../components/concern-modal";
+
+// ─── Prose Logo ───────────────────────────────────────────
+function ProseLogo() {
+  return (
+    <div className="h-[22px] overflow-clip relative shrink-0 w-[62px]">
+      <div className="absolute bottom-[0.5px] h-[17.999px] left-0 w-[62px]">
+        <svg className="absolute block size-full" fill="none" preserveAspectRatio="none" viewBox="0 0 62.0001 17.9995">
+          <g>
+            <path d={svgPaths.p17b85140} fill="#323429" />
+            <path d={svgPaths.p2b3a1500} fill="#323429" />
+          </g>
+        </svg>
+      </div>
+    </div>
+  );
+}
+
+// ─── Skin Analysis Data ───────────────────────────────────
+interface AnalysisMetric {
+  label: string;
+  key: string;
+  value: number; // 0–1
+  color: string;
+  severityLabel: string;
+  description: string;
+  basedOn: BasedOnFactor[];
+}
+
+const analysisMetrics: AnalysisMetric[] = [
+  {
+    label: "DRYNESS",
+    key: "dryness",
+    value: 1.0,
+    color: "#f69371",
+    severityLabel: "Very High",
+    description:
+      "Your skin is losing moisture rapidly throughout the day. Your formula will deeply hydrate with hyaluronic acid and ceramides to restore your skin's moisture barrier and prevent transepidermal water loss.",
+    basedOn: [
+      { label: "Sun exposure", icon: "sun", value: "High" },
+      { label: "Skin type", icon: "drop", value: "Dry/Combo" },
+      { label: "Climate", icon: "heat", value: "Arid" },
+    ],
+  },
+  {
+    label: "SKIN MATURITY",
+    key: "skin-maturity",
+    value: 0.9,
+    color: "#f69371",
+    severityLabel: "High",
+    description:
+      "Early signs of fine lines and loss of elasticity are present. Your formula will include retinol and peptides to boost collagen production and improve skin firmness over time.",
+    basedOn: [
+      { label: "Age", icon: "calendar", value: "30-39" },
+      { label: "Sun exposure", icon: "sun", value: "High" },
+      { label: "Skincare routine", icon: "drop", value: "Minimal" },
+    ],
+  },
+  {
+    label: "OILINESS",
+    key: "oiliness",
+    value: 0.6,
+    color: "#EABF6F",
+    severityLabel: "Moderate",
+    description:
+      "Your T-zone produces excess sebum while other areas stay balanced. Your formula will use niacinamide and lightweight hydrators to regulate oil without over-drying.",
+    basedOn: [
+      { label: "Skin type", icon: "drop", value: "Oily T-zone" },
+      { label: "Climate", icon: "heat", value: "Humid" },
+      { label: "Daily washing", icon: "calendar", value: "2x" },
+    ],
+  },
+  {
+    label: "SKIN BARRIER",
+    key: "skin-barrier",
+    value: 0.6,
+    color: "#EABF6F",
+    severityLabel: "Moderate",
+    description:
+      "Frequent exfoliation and product layering have weakened your skin barrier. Your formula will include ceramides and centella asiatica to strengthen and repair barrier function.",
+    basedOn: [
+      { label: "Exfoliation", icon: "heat", value: "Frequent" },
+      { label: "Sensitivity", icon: "stressed", value: "Occasional" },
+      { label: "Products", icon: "drop", value: "Many" },
+    ],
+  },
+  {
+    label: "HYPERPIGMENTATION",
+    key: "hyperpigmentation",
+    value: 0.4,
+    color: "#B9C2A6",
+    severityLabel: "Low",
+    description:
+      "Mild uneven tone and occasional dark spots are emerging. Your formula will include vitamin C and azelaic acid to brighten and even out your complexion over time.",
+    basedOn: [
+      { label: "Sun exposure", icon: "sun", value: "Moderate" },
+      { label: "Skin tone", icon: "head", value: "Medium" },
+      { label: "Breakouts", icon: "stressed", value: "Occasional" },
+    ],
+  },
+];
+
+// ─── Dot Cloud Visualization ─────────────────────────────
+const DOT_COLORS = [
+  "#d1cdc4",  // neutral/600
+  "#f69371",  // accent/200
+  "#B9C2A6",  // primary/200
+  "#EABF6F",  // EABF6F
+];
+
+// Circles from the animation SVG: [cx, cy, r]
+const cloudDots: [number, number, number][] = [
+  [162.803,28,10],[182.575,33.5,5.025],[167.5,47.7375,5.025],[200.162,70.35,5.025],
+  [183.606,76,6],[206.606,117,6],[187.6,112.225,5.025],[190.113,153.262,5.025],
+  [178.606,148,6],[162.475,183.412,5.025],[152.425,170.85,5.025],[116.606,197,6],
+  [113.062,180.9,5.025],[61.975,185.925,5.025],[73.606,177,6],[24.2875,158.288,5.025],
+  [37.606,149,6],[5.025,112.225,5.025],[25.125,112.225,5.025],[10.606,69,6],
+  [26.8,72.025,5.025],[34.3375,33.5,5.025],[42.606,45,6],[67.606,11,6],
+  [72.8625,23.45,5.025],[108.037,5.025,5.025],[149.606,15,6],[139.025,26.8,5.025],
+  [184.803,53,10],[172.803,163,10],[136.803,186,10],[92.803,188,10],
+  [44.803,168,10],[19.803,131,10],[13.803,91,10],[23.803,53,10],
+  [61.351,151.256,5.025],[77.599,141.507,5.025],[40.606,97,6],[55.935,107.928,5.025],
+  [83.606,102,6],[99.263,113.344,5.025],[81.606,123,6],[119.597,160.091,5.025],
+  [133.145,146.773,6],[53.378,59.172,5.025],[73.803,66,6],[98.606,63,6],
+  [117.677,67.85,5.025],[96.705,31.009,5.025],[111.606,29,6],[89.803,157,10],
+  [112.803,136,10],[123.606,112,6],[139.263,123.344,5.025],[152.803,146,10],
+  [162.803,116,10],[55.803,130,10],[57.803,85,10],[100.803,85,10],
+  [81.803,46,10],[113.803,46,10],[148.606,69,6],[127.803,85,10],
+  [167.677,77.85,5.025],[150.803,95,10],[143.803,46,10],[51.803,25,10],
+  [88.803,12,10],[126.803,12,10],[198.803,91,10],[192.803,131,10],
+  // 17 additional dots to reach 85 total
+  [145.2,38,6],[30.5,88,5.025],[170.3,140,10],[75.4,52,6],
+  [105.5,170,5.025],[48.2,120,10],[158.7,98,5.025],[90.1,140,6],
+  [130.6,60,5.025],[15.8,100,6],[175.9,65,5.025],[65.3,165,10],
+  [140.2,170,6],[108.8,20,5.025],[195.5,105,5.025],[38.7,55,6],
+  [155.4,175,5.025],
+];
+
+// Seeded pseudo-random for deterministic color assignment
+const rng = (seed: number) => ((Math.sin(seed * 127.1 + 311.7) * 43758.5453) % 1 + 1) % 1;
+
+// Classify dots by size for concern-based coloring
+// large (r=10) → high/red, medium (r=6) → moderate/yellow, small (r=5.025) → low/green
+type DotSize = "large" | "medium" | "small";
+function getDotSize(r: number): DotSize {
+  if (r >= 9) return "large";
+  if (r >= 5.5) return "medium";
+  return "small";
+}
+
+// Map concern phases to which dot sizes light up and in what color
+const CONCERN_PHASES = [
+  { key: "dryness",           label: "Dryness",           color: "#f69371", dotSize: "large" as DotSize },
+  { key: "skin-maturity",     label: "Skin Maturity",     color: "#f69371", dotSize: "large" as DotSize },
+  { key: "oiliness",          label: "Oiliness",          color: "#EABF6F", dotSize: "medium" as DotSize },
+  { key: "skin-barrier",      label: "Skin Barrier",      color: "#EABF6F", dotSize: "medium" as DotSize },
+  { key: "hyperpigmentation", label: "Hyperpigmentation", color: "#B9C2A6", dotSize: "small" as DotSize },
+];
+
+// Shuffle all dot indices deterministically, then distribute evenly across 5 concerns
+// so each concern gets a mix of large, medium, and small dots
+const allDotIndices = cloudDots.map((_, i) => i);
+// Deterministic shuffle using seeded rng
+const shuffled = [...allDotIndices].sort((a, b) => rng(a * 17 + 3) - rng(b * 13 + 7));
+
+const concernDotSets: number[][] = [[], [], [], [], []];
+shuffled.forEach((dotIndex, i) => {
+  concernDotSets[i % 5].push(dotIndex);
+});
+
+interface CloudDot {
+  cx: number;
+  cy: number;
+  r: number;
+  floatX: number[];
+  floatY: number[];
+  floatDuration: number;
+  opacity: number;
+}
+
+// Stretch dots horizontally and compress vertically to create an oval shape
+const centerX = 106.5;
+const centerY = 101.5;
+const scaleX = 1.0;
+const scaleY = 1.0;
+
+const animatedCloudDots: CloudDot[] = cloudDots.map(([cx, cy, r], i) => {
+  const ovalCx = centerX + (cx - centerX) * scaleX;
+  const ovalCy = centerY + (cy - centerY) * scaleY;
+  const drift = 2 + rng(i) * 3;
+  const driftX = drift * (rng(i * 2) > 0.5 ? 1 : -1);
+  const driftY = drift * (rng(i * 3) > 0.5 ? 1 : -1);
+  return {
+    cx: ovalCx, cy: ovalCy, r,
+    floatX: [0, driftX, -driftX * 0.6, driftX * 0.3, 0],
+    floatY: [0, -driftY * 0.7, driftY, -driftY * 0.4, 0],
+    floatDuration: 4 + rng(i * 5) * 3,
+    opacity: 0.5 + rng(i * 7) * 0.5, // random opacity between 0.5 and 1.0
+  };
+});
+
+// Compute the color for a given dot based on the current active concern phase
+// phase -1 = loading (all grey), 0-4 = concern phases, 5 = all colored (final)
+// Each phase ONLY colors its own dots — no accumulation.
+// Same-color pairs (Dryness↔Skin Maturity, Oiliness↔Skin Barrier) swap positions.
+function getDotColor(dotIndex: number, phase: number): string {
+  const grey = "#EAEAEA";
+  if (phase < 0) return grey;
+
+  // Phase 5 (overview card) = all dots colored
+  if (phase >= 5) {
+    for (let p = 0; p <= 4; p++) {
+      if (concernDotSets[p].includes(dotIndex)) return CONCERN_PHASES[p].color;
+    }
+    return grey;
+  }
+
+  // Only color dots belonging to the active phase
+  if (concernDotSets[phase].includes(dotIndex)) {
+    return CONCERN_PHASES[phase].color;
+  }
+
+  return grey;
+}
+
+// Which concern owns this dot, and what's its stagger index within that group?
+const dotConcern: number[] = [];
+const dotGroupIndex: number[] = [];
+cloudDots.forEach((_, i) => {
+  for (let c = 0; c < 5; c++) {
+    const idx = concernDotSets[c].indexOf(i);
+    if (idx !== -1) {
+      dotConcern[i] = c;
+      dotGroupIndex[i] = idx;
+      return;
+    }
+  }
+  dotConcern[i] = -1;
+  dotGroupIndex[i] = 0;
+});
+
+function DotRingVisualization({ phase, loaded }: { phase: number; loaded: boolean }) {
+  return (
+    <div className="relative w-[182px] h-[174px] mx-auto">
+      <svg viewBox="0 0 213 203" className="w-full h-full overflow-visible">
+        {animatedCloudDots.map((dot, i) => {
+          const concern = dotConcern[i];
+          const groupIdx = dotGroupIndex[i];
+          const groupSize = concern >= 0 ? concernDotSets[concern].length : 1;
+          const concernColor = concern >= 0 ? CONCERN_PHASES[concern].color : "#EAEAEA";
+          const grey = "#EAEAEA";
+
+          let visible: boolean;
+          let fill: string;
+
+          if (!loaded) {
+            // Loading: progressive reveal — only show dots whose concern has been reached
+            visible = concern >= 0 && phase >= concern;
+            fill = concernColor;
+          } else {
+            // Loaded: all dots always visible
+            visible = true;
+            if (phase >= 5) {
+              // Overview card — all colored
+              fill = concernColor;
+            } else {
+              // Individual concern selected — active dots colored, others grey
+              fill = concern === phase ? concernColor : grey;
+            }
+          }
+
+          // Stagger within the group for a natural reveal
+          const staggerDelay = !loaded ? (groupIdx / groupSize) * 0.4 : 0;
+
+          return (
+            <motion.circle
+              key={i}
+              cx={dot.cx}
+              cy={dot.cy}
+              r={dot.r >= 9 ? dot.r * 0.8 : dot.r}
+              initial={{ scale: 0, opacity: 0, x: 0, y: 0 }}
+              animate={
+                visible
+                  ? {
+                      scale: 1,
+                      opacity: dot.opacity,
+                      fill,
+                      x: dot.floatX,
+                      y: dot.floatY,
+                    }
+                  : { scale: 0, opacity: 0, fill }
+              }
+              transition={{
+                fill: { duration: 0.4, ease: "easeInOut" },
+                scale: {
+                  duration: 0.6,
+                  delay: staggerDelay,
+                  ease: [0.34, 1.56, 0.64, 1],
+                },
+                opacity: {
+                  duration: 0.5,
+                  delay: staggerDelay,
+                  ease: "easeInOut",
+                },
+                x: {
+                  duration: dot.floatDuration,
+                  delay: staggerDelay + 0.6,
+                  repeat: Infinity,
+                  ease: "easeInOut",
+                },
+                y: {
+                  duration: dot.floatDuration,
+                  delay: staggerDelay + 0.6,
+                  repeat: Infinity,
+                  ease: "easeInOut",
+                },
+              }}
+            />
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+
+// ─── Bar Chart ────────────────────────────────────────────
+function BarChart({
+  metrics,
+  selectedKey,
+  onSelect,
+}: {
+  metrics: AnalysisMetric[];
+  selectedKey: string;
+  onSelect: (key: string) => void;
+}) {
+  return (
+    <div className="bg-white rounded-[14px] shadow-[0px_2px_12px_0px_rgba(0,0,0,0.06),0px_0.5px_2px_0px_rgba(0,0,0,0.04)] p-[20px] w-full flex flex-col gap-[16px]">
+      {/* Low / High labels */}
+      <div className="flex justify-between pl-[90px] mb-[-6px]">
+        <p className="font-['Simplon_Norm',sans-serif] text-[10px] text-[#a0a090] tracking-[0.2px]">Low</p>
+        <p className="font-['Simplon_Norm',sans-serif] text-[10px] text-[#a0a090] tracking-[0.2px] text-right">High</p>
+      </div>
+
+      {/* Bars */}
+      <div className="flex flex-col gap-[12px]">
+        {metrics.map((metric) => {
+          const isSelected = metric.key === selectedKey;
+          return (
+            <button
+              key={metric.key}
+              onClick={() => onSelect(metric.key)}
+              className="flex items-center gap-[12px] w-full cursor-pointer group"
+            >
+              <p
+                className="font-['Simplon_Mono',monospace] text-[10px] tracking-[0.8px] uppercase w-[78px] text-right shrink-0 transition-colors"
+                style={{ color: "#323429", fontWeight: 500 }}
+              >
+                {metric.label}
+              </p>
+              <div className="flex-1 h-[12px] bg-[#f1ece0] rounded-full relative overflow-hidden">
+                <motion.div
+                  className="h-full rounded-full"
+                  style={{ backgroundColor: metric.color }}
+                  initial={{ width: 0 }}
+                  animate={{ width: `${metric.value * 100}%` }}
+                  transition={{ duration: 1.0, delay: 0.5, ease: "easeOut" }}
+                />
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─── Based-On Icons ──────────────────────────────────────
+function IconHeat() {
+  return (
+    <svg className="size-[16px]" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M4.63672 2.44153C5.16327 2.94384 5.55158 3.43101 5.7959 3.90344C6.04054 4.37661 6.16348 4.86924 6.16309 5.37903C6.16309 5.72873 6.11261 6.09857 6.0127 6.48743V6.4884C5.91197 6.87715 5.7274 7.39149 5.46387 8.0304L5.46484 8.03137C5.20501 8.67077 5.02854 9.16631 4.93457 9.51868C4.84136 9.87004 4.79492 10.1958 4.79492 10.4962C4.79496 10.8992 4.88443 11.2897 5.06348 11.6691C5.2438 12.0507 5.53803 12.4852 5.95117 12.9728L6.0332 13.0695L5.93555 13.1505L5.44727 13.5548L5.35645 13.63L5.27637 13.5441C4.80496 13.0393 4.45213 12.5399 4.22168 12.046C3.9912 11.552 3.87501 11.042 3.875 10.5167C3.875 10.1169 3.93182 9.70423 4.04492 9.27942C4.15761 8.85672 4.34717 8.32702 4.61133 7.6925C4.86038 7.08179 5.02808 6.6149 5.11621 6.29016L5.17383 6.05286C5.22302 5.81988 5.24707 5.60116 5.24707 5.39661C5.24706 5.00607 5.15277 4.63324 4.96387 4.27747C4.77439 3.91995 4.45924 3.52323 4.01172 3.08801L3.92188 3.0011L4.00879 2.91223L4.45996 2.44543L4.54688 2.35559L4.63672 2.44153ZM10.6006 2.44153C11.1273 2.94394 11.5164 3.43092 11.7607 3.90344C12.0054 4.37661 12.1283 4.86924 12.1279 5.37903C12.1279 5.72871 12.0774 6.09858 11.9775 6.48743H11.9766C11.8762 6.87662 11.6931 7.39256 11.4287 8.03235C11.169 8.67141 10.9933 9.16644 10.8994 9.51868C10.8063 9.86972 10.7607 10.1955 10.7607 10.4962C10.7608 10.8992 10.8497 11.2897 11.0273 11.6691L11.1836 11.9659C11.3613 12.2718 11.6038 12.6074 11.9131 12.9728L11.9951 13.0704L11.8975 13.1505L11.4082 13.5519L11.3184 13.6261L11.2383 13.5402C10.767 13.0351 10.4147 12.5371 10.1855 12.045C9.95596 11.5519 9.84083 11.0419 9.84082 10.5167C9.84082 10.1168 9.89762 9.70428 10.0107 9.27942C10.1239 8.85678 10.313 8.327 10.5771 7.6925C10.8258 7.08179 10.9929 6.61494 11.0811 6.29016C11.1689 5.96685 11.2119 5.66926 11.2119 5.39661C11.2119 5.00631 11.1183 4.63407 10.9287 4.27844C10.7379 3.92067 10.4208 3.52344 9.97266 3.08801L9.88281 3.0011L9.9707 2.91125L10.4248 2.44446L10.5117 2.35657L10.6006 2.44153ZM7.62109 2.41516C8.14789 2.91811 8.53529 3.40631 8.77832 3.87903C9.02153 4.35211 9.14448 4.84403 9.14453 5.35364C9.14453 5.70351 9.0936 6.07398 8.99316 6.46301C8.89279 6.85164 8.70956 7.36705 8.44531 8.00696C8.18557 8.64614 8.00898 9.141 7.91504 9.49329C7.82188 9.84402 7.77637 10.1698 7.77637 10.4708C7.77639 10.8737 7.86501 11.2644 8.04395 11.6437C8.22429 12.0254 8.51934 12.4602 8.93262 12.9474L9.01465 13.0431L8.42871 13.5294L8.33789 13.6046L8.25684 13.5187C7.78554 13.0136 7.43354 12.514 7.20312 12.0206C6.97221 11.5262 6.85547 11.0162 6.85547 10.4913C6.85547 10.0914 6.91281 9.67886 7.02637 9.25403C7.13862 8.8308 7.32762 8.30122 7.5918 7.66711C7.84085 7.05595 8.00854 6.5891 8.09668 6.26477C8.18449 5.94153 8.22754 5.64331 8.22754 5.37024C8.22747 4.98026 8.13375 4.60778 7.94531 4.25208C7.75587 3.89419 7.44008 3.4978 6.99219 3.06262L6.90234 2.97473L6.99023 2.88489L7.44531 2.41907L7.53125 2.3302L7.62109 2.41516Z" fill="#4D523C" stroke="#4D523C" strokeWidth="0.25" strokeLinecap="round"/>
+    </svg>
+  );
+}
+function IconSun() {
+  return (
+    <svg className="size-[16px]" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <g clipPath="url(#clip_sun_r)">
+        <path d="M7.94213 -0.0189669C7.91611 -0.0142674 7.89041 -0.0078952 7.86521 0.000109997C7.72628 0.0312495 7.60244 0.109601 7.5148 0.221814C7.42716 0.334027 7.38115 0.473156 7.38459 0.615495V2.46165C7.38459 2.62486 7.44943 2.78138 7.56484 2.89679C7.68024 3.0122 7.83677 3.07703 7.99998 3.07703C8.16319 3.07703 8.31971 3.0122 8.43512 2.89679C8.55053 2.78138 8.61536 2.62486 8.61536 2.46165V0.615495C8.61847 0.527986 8.60287 0.440821 8.5696 0.359825C8.53632 0.278828 8.48615 0.205865 8.42242 0.14581C8.3587 0.0857545 8.28289 0.0399903 8.20007 0.0115749C8.11724 -0.0168406 8.0293 -0.0272531 7.94213 -0.0189669ZM4.21167 0.981033C4.11144 0.995326 4.01628 1.03413 3.93464 1.094C3.85299 1.15387 3.78738 1.23296 3.74362 1.32426C3.69985 1.41556 3.67929 1.51625 3.68376 1.61739C3.68822 1.71854 3.71757 1.81702 3.76921 1.90411L4.69229 3.51949C4.77571 3.65869 4.91037 3.75965 5.06737 3.80072C5.22437 3.84179 5.39121 3.8197 5.53211 3.73919C5.67301 3.65867 5.77675 3.52614 5.82107 3.37003C5.8654 3.21392 5.84678 3.04665 5.76921 2.90411L4.84613 1.28873C4.78465 1.1786 4.69082 1.09003 4.57734 1.035C4.46386 0.979962 4.33621 0.961124 4.21167 0.981033ZM11.5766 0.981033C11.4879 0.998132 11.404 1.03457 11.3309 1.08774C11.2578 1.14092 11.1974 1.20954 11.1538 1.28873L10.2307 2.90411C10.1532 3.04665 10.1346 3.21392 10.1789 3.37003C10.2232 3.52614 10.3269 3.65867 10.4678 3.73919C10.6087 3.8197 10.7756 3.84179 10.9326 3.80072C11.0896 3.75965 11.2242 3.65869 11.3077 3.51949L12.2307 1.90411C12.2884 1.80582 12.3175 1.69348 12.3151 1.57958C12.3126 1.46568 12.2786 1.3547 12.2167 1.25901C12.1549 1.16332 12.0678 1.08666 11.9649 1.03758C11.8621 0.988503 11.7477 0.968926 11.6344 0.981033C11.6154 0.980146 11.5957 0.980146 11.5766 0.981033ZM7.99998 3.69242C7.43428 3.69242 6.87413 3.80384 6.3515 4.02032C5.82886 4.2368 5.35399 4.55411 4.95398 4.95411C4.55397 5.35412 4.23667 5.82899 4.02019 6.35163C3.80371 6.87426 3.69229 7.43442 3.69229 8.00011C3.69229 8.5658 3.80371 9.12596 4.02019 9.64859C4.23667 10.1712 4.55397 10.6461 4.95398 11.0461C5.35399 11.4461 5.82886 11.7634 6.3515 11.9799C6.87413 12.1964 7.43428 12.3078 7.99998 12.3078C9.14245 12.3078 10.2381 11.854 11.046 11.0461C11.8538 10.2383 12.3077 9.14258 12.3077 8.00011C12.3077 6.85764 11.8538 5.76196 11.046 4.95411C10.2381 4.14626 9.14245 3.69242 7.99998 3.69242ZM7.99998 4.92319C9.69659 4.92319 11.0769 6.30349 11.0769 8.00011C11.0769 9.69673 9.69659 11.077 7.99998 11.077C6.30336 11.077 4.92306 9.69673 4.92306 8.00011C4.92306 6.30349 6.30336 4.92319 7.99998 4.92319ZM0.442441 7.38473C0.27923 7.40766 0.131814 7.49448 0.0326219 7.6261C-0.0665704 7.75773 -0.109414 7.92336 -0.0864825 8.08657C-0.0635515 8.24978 0.0232753 8.3972 0.154897 8.49639C0.286519 8.59558 0.452154 8.63843 0.615364 8.61549H2.46152C2.62473 8.61549 2.78125 8.55066 2.89666 8.43525C3.01207 8.31985 3.0769 8.16332 3.0769 8.00011C3.0769 7.8369 3.01207 7.68037 2.89666 7.56497C2.78125 7.44956 2.62473 7.38473 2.46152 7.38473H0.615364C0.596092 7.38382 0.576789 7.38382 0.557518 7.38473C0.538246 7.38382 0.518943 7.38382 0.499671 7.38473C0.480605 7.38384 0.461507 7.38384 0.442441 7.38473ZM13.3655 7.38473C13.2023 7.40766 13.0549 7.49448 12.9557 7.6261C12.8565 7.75773 12.8137 7.92336 12.8366 8.08657C12.8595 8.24978 12.9464 8.3972 13.078 8.49639C13.2096 8.59558 13.3752 8.63843 13.5384 8.61549H15.3846C15.5478 8.61549 15.7043 8.55066 15.8197 8.43525C15.9351 8.31985 16 8.16332 16 8.00011C16 7.8369 15.9351 7.68037 15.8197 7.56497C15.7043 7.44956 15.5478 7.38473 15.3846 7.38473H13.5384C13.5192 7.38382 13.4999 7.38382 13.4806 7.38473C13.4615 7.38384 13.4424 7.38384 13.4234 7.38473C13.4041 7.38382 13.3848 7.38382 13.3655 7.38473Z" fill="#4D523C"/>
+      </g>
+      <defs><clipPath id="clip_sun_r"><rect width="16" height="16" fill="white"/></clipPath></defs>
+    </svg>
+  );
+}
+function IconCalendar() {
+  return (
+    <svg className="size-[16px]" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M12.6667 4H3.33333C2.59695 4 2 4.59695 2 5.33333V12.6667C2 13.403 2.59695 14 3.33333 14H12.6667C13.403 14 14 13.403 14 12.6667V5.33333C14 4.59695 13.403 4 12.6667 4Z" stroke="#4D523C"/>
+      <path d="M2 7.33333H14M6 10.6667H10M5.33333 2V4.66667M10.6667 2V4.66667" stroke="#4D523C" strokeLinecap="round"/>
+    </svg>
+  );
+}
+function IconStressed() {
+  return (
+    <svg className="size-[16px]" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M8 1.875C8.84468 1.875 9.6407 2.03586 10.3867 2.3584C11.1303 2.68039 11.7785 3.11789 12.3301 3.66992C12.8821 4.22152 13.3191 4.86963 13.6406 5.61328C13.9636 6.35976 14.125 7.1557 14.125 8C14.125 8.84425 13.9641 9.64027 13.6416 10.3867C13.3196 11.1303 12.8826 11.7785 12.3311 12.3301C11.779 12.8821 11.1304 13.3191 10.3867 13.6406C9.64067 13.9636 8.84472 14.125 8 14.125C7.15532 14.125 6.3593 13.9641 5.61328 13.6416C4.96264 13.3599 4.38494 12.9897 3.88086 12.5322L3.66895 12.3311C3.11738 11.779 2.68039 11.1303 2.3584 10.3867C2.03542 9.6407 1.87456 8.84468 1.875 8C1.87545 7.15535 2.03631 6.35929 2.3584 5.61328C2.68039 4.86966 3.11789 4.22151 3.66992 3.66992C4.22152 3.11744 4.86963 2.67995 5.61328 2.3584C6.3593 2.03586 7.15532 1.875 8 1.875ZM8 2.79199C6.54356 2.79199 5.31409 3.29529 4.30469 4.30469C3.29529 5.31409 2.79199 6.54356 2.79199 8C2.79199 9.45644 3.29529 10.6859 4.30469 11.6953C5.31409 12.7047 6.54356 13.208 8 13.208C9.45644 13.208 10.6859 12.7047 11.6953 11.6953C12.7047 10.6859 13.208 9.45644 13.208 8C13.208 6.54356 12.7047 5.31409 11.6953 4.30469C10.6859 3.29529 9.45644 2.79199 8 2.79199ZM10 9.23145C10.1099 9.23145 10.2056 9.27739 10.2832 9.35547L10.9473 10.0195C11.0295 10.1018 11.0812 10.2012 11.082 10.3154C11.0827 10.4308 11.0302 10.5314 10.9473 10.6143C10.8616 10.6998 10.7569 10.7498 10.6367 10.7432H10.6357C10.5264 10.7368 10.4302 10.692 10.3525 10.6143L10 10.2617L9.2832 10.9785C9.20543 11.0563 9.10972 11.1016 9 11.1016C8.89028 11.1016 8.79457 11.0563 8.7168 10.9785L8 10.2617L7.2832 10.9785C7.20543 11.0563 7.10972 11.1016 7 11.1016C6.89028 11.1016 6.79457 11.0563 6.7168 10.9785L6 10.2617L5.64746 10.6152C5.56436 10.6972 5.46399 10.75 5.34961 10.75C5.23539 10.7499 5.13634 10.6972 5.05371 10.6152C4.96746 10.5296 4.91701 10.4244 4.92383 10.3037C4.92962 10.1935 4.97479 10.0972 5.05371 10.0195L5.7168 9.35547L5.77832 9.30371C5.84316 9.25774 5.91746 9.23145 6 9.23145C6.11014 9.23145 6.2057 9.27797 6.2832 9.35645L6.99902 10.0723L7.7168 9.35547L7.77832 9.30371C7.84316 9.25774 7.91746 9.23145 8 9.23145C8.11014 9.23145 8.2057 9.27797 8.2832 9.35645L8.99902 10.0723L9.7168 9.35547V9.35449C9.79455 9.27681 9.89035 9.23145 10 9.23145ZM5.12207 5.20898C5.23792 5.179 5.34657 5.20996 5.43945 5.28223H5.44043L6.90234 6.35059L6.90723 6.35352C7.00618 6.43294 7.06152 6.54013 7.06152 6.66699C7.06143 6.79364 7.006 6.90015 6.90723 6.97949L6.90332 6.98242L6.8291 6.88184L6.90234 6.98242L5.45312 8.05078L5.45215 8.0498C5.35613 8.12487 5.24427 8.15285 5.125 8.125C5.01318 8.09887 4.9216 8.03734 4.85742 7.94238C4.79497 7.84991 4.76912 7.74568 4.78418 7.63574C4.79976 7.52211 4.85896 7.43006 4.95312 7.36523L5.91113 6.66602L4.95312 5.96777V5.9668C4.85753 5.90261 4.79567 5.81159 4.78223 5.69629L4.78027 5.61523C4.78511 5.53593 4.81131 5.46055 4.85742 5.3916L4.86426 5.38184C4.93315 5.297 5.01902 5.23637 5.12109 5.20898H5.12207ZM10.874 5.20801C10.9862 5.23409 11.0783 5.29637 11.1426 5.3916C11.2048 5.48391 11.2308 5.58757 11.2158 5.69727C11.2002 5.81092 11.1401 5.90197 11.0459 5.9668L11.0469 5.96777L10.0879 6.66602L11.0469 7.36523L11.0459 7.36621C11.1419 7.43037 11.2042 7.52124 11.2178 7.63672L11.2197 7.71777C11.2149 7.79717 11.1887 7.87238 11.1426 7.94141L11.1367 7.95117L11.1357 7.9502C11.0667 8.03588 10.9808 8.09705 10.8779 8.12402C10.7615 8.15417 10.6527 8.12278 10.5596 8.0498V8.05078L9.09668 6.9834L9.09277 6.97949C8.99388 6.90013 8.9376 6.79373 8.9375 6.66699C8.9375 6.54011 8.99379 6.43294 9.09277 6.35352L9.09668 6.35059L10.5469 5.28223C10.6426 5.20728 10.755 5.18043 10.874 5.20801Z" fill="#4D523C" stroke="#4D523C" strokeWidth="0.25"/>
+    </svg>
+  );
+}
+function IconHead() {
+  return (
+    <svg className="size-[16px]" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path fillRule="evenodd" clipRule="evenodd" d="M3.33335 6.66658C3.33335 5.76463 3.5621 4.8774 3.99821 4.08788C4.43431 3.29836 5.06352 2.63234 5.827 2.1521C6.59048 1.67186 7.46328 1.39309 8.36379 1.34186C9.26429 1.29064 10.1631 1.46863 10.9761 1.85918C11.7891 2.24974 12.4898 2.84012 13.0126 3.57509C13.5354 4.31006 13.8633 5.16562 13.9656 6.06176C14.0679 6.9579 13.9412 7.86534 13.5975 8.69923C13.2537 9.53311 12.7041 10.2662 12 10.8299V13.6666C12 13.9318 11.8947 14.1862 11.7071 14.3737C11.5196 14.5612 11.2652 14.6666 11 14.6666H7.66669C7.40147 14.6666 7.14712 14.5612 6.95958 14.3737C6.77204 14.1862 6.66669 13.9318 6.66669 13.6666V12.6666H5.84402C5.35652 12.6666 4.8858 12.4886 4.52033 12.166C4.15485 11.8433 3.9198 11.3983 3.85935 10.9146L3.76602 10.1659L3.26802 10.0666C3.12295 10.0375 2.98613 9.97666 2.86743 9.88835C2.74873 9.80003 2.65111 9.68648 2.5816 9.55588C2.51209 9.42527 2.47242 9.28087 2.46546 9.13308C2.4585 8.9853 2.48442 8.83781 2.54135 8.70125L3.33469 6.79592L3.33335 6.66658ZM8.66669 2.66658C8.1287 2.66656 7.59624 2.77506 7.10116 2.9856C6.60608 3.19613 6.15856 3.50437 5.78537 3.89188C5.41218 4.27938 5.121 4.73818 4.92924 5.24083C4.73748 5.74348 4.64909 6.27965 4.66935 6.81725C4.67469 6.95725 4.65135 7.10392 4.59269 7.24392L3.92802 8.83925L4.26269 8.90592C4.46848 8.94712 4.6561 9.05202 4.79896 9.20577C4.94182 9.35952 5.03269 9.55432 5.05869 9.76258L5.18202 10.7493C5.20218 10.9106 5.28059 11.059 5.40251 11.1665C5.52443 11.2741 5.68144 11.3334 5.84402 11.3333H7.00002C7.26524 11.3333 7.51959 11.4386 7.70713 11.6261C7.89466 11.8137 8.00002 12.068 8.00002 12.3333V13.3333H10.6667V10.6706C10.6667 10.3393 10.8294 10.0459 11.0727 9.86258C11.7431 9.35806 12.2378 8.6555 12.487 7.85433C12.7361 7.05315 12.727 6.19391 12.4609 5.39819C12.1949 4.60248 11.6854 3.91056 11.0044 3.42035C10.3235 2.93013 9.50571 2.66644 8.66669 2.66658Z" fill="#4D523C"/>
+    </svg>
+  );
+}
+function IconDrop() {
+  return (
+    <svg className="size-[16px]" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M8 2.0646L4.7 5.3646C4.04741 6.01726 3.603 6.84878 3.42297 7.75402C3.24294 8.65925 3.33539 9.59753 3.68861 10.4502C4.04183 11.3029 4.63997 12.0317 5.40739 12.5445C6.17481 13.0572 7.07704 13.3309 8 13.3309C8.92296 13.3309 9.82519 13.0572 10.5926 12.5445C11.36 12.0317 11.9582 11.3029 12.3114 10.4502C12.6646 9.59753 12.7571 8.65925 12.577 7.75402C12.397 6.84878 11.9526 6.01726 11.3 5.3646L8 2.0646ZM8 0.179932L12.2427 4.4226C13.0818 5.26172 13.6532 6.33081 13.8847 7.4947C14.1162 8.65858 13.9974 9.86498 13.5433 10.9613C13.0891 12.0577 12.3201 12.9948 11.3334 13.654C10.3467 14.3133 9.18669 14.6652 8 14.6652C6.81332 14.6652 5.65328 14.3133 4.66659 13.654C3.6799 12.9948 2.91086 12.0577 2.45673 10.9613C2.0026 9.86498 1.88378 8.65858 2.11529 7.4947C2.34679 6.33081 2.91823 5.26172 3.75734 4.4226L8 0.179932Z" fill="#4D523C"/>
+    </svg>
+  );
+}
+
+function ResultsBasedOnIcon({ icon }: { icon: BasedOnFactor["icon"] }) {
+  switch (icon) {
+    case "heat": return <IconHeat />;
+    case "sun": return <IconSun />;
+    case "calendar": return <IconCalendar />;
+    case "stressed": return <IconStressed />;
+    case "head": return <IconHead />;
+    case "drop": return <IconDrop />;
+    default: return null;
+  }
+}
+
+// ─── Detail Cards Carousel ────────────────────────────────
+function DetailCarousel({
+  metrics,
+  activeIndex,
+  onIndexChange,
+  onLoopStart,
+  onLoopEnd,
+  onKill,
+}: {
+  metrics: AnalysisMetric[];
+  activeIndex: number;
+  onIndexChange: (index: number) => void;
+  onLoopStart?: () => void;
+  onLoopEnd?: () => void;
+  onKill?: () => void;
+}) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const animFrameId = useRef(0);
+
+  // Kill auto-play on ANY user interaction with the scroll container
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || !onKill) return;
+
+    // These events ONLY fire from direct user input, never from JS scrollLeft assignment
+    const handler = () => { onKill(); };
+    el.addEventListener("touchstart", handler, { passive: true });
+    el.addEventListener("touchmove", handler, { passive: true });
+    el.addEventListener("pointerdown", handler);
+    el.addEventListener("wheel", handler, { passive: true });
+    return () => {
+      el.removeEventListener("touchstart", handler);
+      el.removeEventListener("touchmove", handler);
+      el.removeEventListener("pointerdown", handler);
+      el.removeEventListener("wheel", handler);
+    };
+  }, [onKill]);
+
+  // Smooth scroll with 800ms ease-in-out (only when auto-playing)
+  useEffect(() => {
+    // If user killed auto-play, don't programmatically scroll
+    if (_autoPlayDead) return;
+
+    const el = scrollRef.current;
+    if (!el) return;
+    const cardWidth = 295 + 12;
+    const targetLeft = activeIndex * cardWidth;
+    const startLeft = el.scrollLeft;
+    const distance = targetLeft - startLeft;
+    if (Math.abs(distance) < 1) return;
+
+    // If looping back (scrolling left by more than 1 card), crossfade
+    if (distance < -cardWidth) {
+      onLoopStart?.();
+      const container = scrollContainerRef.current;
+      if (container) {
+        container.style.transition = "opacity 300ms ease-out";
+        container.style.opacity = "0";
+        setTimeout(() => {
+          if (_autoPlayDead) { container.style.transition = ""; container.style.opacity = "1"; return; }
+          el.scrollLeft = 0;
+          container.style.transition = "opacity 300ms ease-in";
+          container.style.opacity = "1";
+          setTimeout(() => {
+            container.style.transition = "";
+            onLoopEnd?.();
+          }, 350);
+        }, 320);
+      }
+      return;
+    }
+
+    const duration = 800;
+    let startTime: number | null = null;
+
+    function easeInOut(t: number) {
+      return t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+    }
+
+    function animate(time: number) {
+      if (_autoPlayDead) return;
+      if (!startTime) startTime = time;
+      const elapsed = time - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      el!.scrollLeft = startLeft + distance * easeInOut(progress);
+      if (progress < 1) {
+        animFrameId.current = requestAnimationFrame(animate);
+      }
+    }
+
+    animFrameId.current = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(animFrameId.current);
+  }, [activeIndex]);
+
+  // Track which card is visible after user scrolls (for dots/headline only)
+  const handleScroll = useCallback(() => {
+    if (!_autoPlayDead) return; // only track user scrolls
+
+    const el = scrollRef.current;
+    if (!el) return;
+    const cardWidth = 295 + 12;
+    const index = Math.round(el.scrollLeft / cardWidth);
+    const totalCards = metrics.length + 1;
+    const clamped = Math.min(index, totalCards - 1);
+    if (clamped !== activeIndex) {
+      onIndexChange(clamped);
+    }
+  }, [activeIndex, metrics.length, onIndexChange]);
+
+  return (
+    <div ref={scrollContainerRef} className="flex flex-col gap-[8px] w-full">
+      <div
+        ref={scrollRef}
+        data-carousel-scroll
+        onScroll={handleScroll}
+        className="overflow-x-auto w-full scrollbar-hide"
+        style={{ scrollbarWidth: "none", msOverflowStyle: "none", scrollPaddingLeft: "24px", scrollSnapType: "none" }}
+      >
+        <div className="flex gap-[12px] pl-[24px]">
+          {/* Full score overview card — first card */}
+          <div className="snap-start shrink-0 w-[295px] flex self-stretch">
+            <div className="bg-white rounded-[14px] shadow-[0px_2px_12px_0px_rgba(0,0,0,0.06),0px_0.5px_2px_0px_rgba(0,0,0,0.04)] p-[20px] w-full flex flex-col justify-start gap-[12px]">
+              <div className="flex justify-between pl-[80px] mb-[-4px]">
+                <p className="font-['Simplon_Norm',sans-serif] text-[10px] text-[#a0a090] tracking-[0.2px]">Low</p>
+                <p className="font-['Simplon_Norm',sans-serif] text-[10px] text-[#a0a090] tracking-[0.2px] text-right">High</p>
+              </div>
+              <div className="h-[0.5px] bg-[#E2D9C2] ml-[80px]" />
+              <div className="flex flex-col gap-[12px]">
+                {metrics.map((metric) => (
+                  <div key={metric.key} className="flex items-center gap-[8px] w-full">
+                    <p className="font-['Simplon_Mono',monospace] font-medium text-[10px] text-[#323429] tracking-[0.8px] uppercase w-[72px] shrink-0">
+                      {metric.label}
+                    </p>
+                    <div className="flex-1 h-[12px] bg-[#f1ece0] rounded-full relative overflow-hidden">
+                      <div
+                        className="h-full rounded-full"
+                        style={{ width: `${metric.value * 100}%`, backgroundColor: metric.color }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="border-t border-[#E2D9C2] pt-[14px] mt-[4px]">
+                <p className="font-['Simplon_Norm',sans-serif] text-[12px] text-[#323429] tracking-[0.24px] leading-[1.5]">
+                  Your consultation analyzed 85+ factors — from skin dryness to environmental stressors. Swipe to see how each one helps us personalize your formula.
+                </p>
+              </div>
+            </div>
+          </div>
+          {/* Concern cards */}
+          {metrics.map((metric) => (
+            <div
+              key={metric.key}
+              className="snap-start bg-white rounded-[14px] shadow-[0px_2px_12px_0px_rgba(0,0,0,0.06),0px_0.5px_2px_0px_rgba(0,0,0,0.04)] shrink-0 w-[295px] overflow-hidden"
+            >
+              <div className="p-[20px] flex flex-col">
+                <div className="flex items-center justify-between">
+                  <p className="font-['Simplon_Mono',monospace] font-medium text-[12px] text-[#323429] tracking-[0.96px] uppercase">
+                    {metric.label}
+                  </p>
+                  <p className="font-['Simplon_Norm',sans-serif] text-[12px] text-[#6c6c6c] tracking-[0.24px]">
+                    {metric.severityLabel}
+                  </p>
+                </div>
+                <div className="h-[6px] bg-[#e8e4db] rounded-full w-full overflow-hidden mt-[10px] mb-[16px]">
+                  <div className="h-full rounded-full" style={{ width: `${metric.value * 100}%`, backgroundColor: metric.color }} />
+                </div>
+                <div className="flex flex-col gap-[8px] pb-[16px] border-b border-[#E2D9C2]">
+                  <p className="font-['Simplon_Norm',sans-serif] font-medium text-[12px] text-[#323429] tracking-[0.24px] leading-[1.5]">
+                    Based on:
+                  </p>
+                  {metric.basedOn.map((factor, fi) => (
+                    <div key={fi} className="flex items-center justify-between">
+                      <p className="font-['Simplon_Norm',sans-serif] text-[12px] text-[#323429] tracking-[0.24px]">
+                        {factor.label}
+                      </p>
+                      <div className="flex items-center gap-[6px]">
+                        <ResultsBasedOnIcon icon={factor.icon} />
+                        <p className="font-['Simplon_Norm',sans-serif] text-[12px] text-[#6c6c6c] tracking-[0.24px]">
+                          {factor.value}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="pt-[16px]">
+                  <p className="font-['Simplon_Norm',sans-serif] font-medium text-[12px] text-[#323429] tracking-[0.24px] leading-[1.5] pb-[8px]">
+                    Your formula will:
+                  </p>
+                  <p className="font-['Simplon_Norm',sans-serif] text-[14px] text-[#323429] tracking-[0.28px] leading-[1.5]">
+                    {metric.description}
+                  </p>
+                </div>
+              </div>
+            </div>
+          ))}
+          <div className="shrink-0 w-[24px]" aria-hidden />
+        </div>
+      </div>
+      {/* Dot indicators */}
+      <div className="flex gap-[7px] items-center justify-center h-[18px]">
+        {[{ key: "overview" }, ...metrics].map((m, i) => (
+          <div
+            key={m.key}
+            className="size-[8px] rounded-full shrink-0 transition-colors duration-300"
+            style={{
+              backgroundColor: i === activeIndex ? "#4D523C" : "#EAEAEA",
+            }}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── Product Thumbnails Preview ───────────────────────────
+const previewProductIds = ["custom-cleanser", "custom-moisturizer", "custom-serum"];
+
+function ProductThumbnails() {
+  const navigate = useNavigate();
+  const products = previewProductIds.map((id) => productCatalog[id]).filter(Boolean);
+
+  return (
+    <div className="flex gap-[8px] items-center justify-center w-full cursor-pointer" onClick={() => navigate("/routine")}>
+      {products.map((product, i) => (
+        <div
+          key={i}
+          className="w-[40px] h-[40px] rounded-[8px] overflow-hidden"
+        >
+          <img
+            src={product.routineImage}
+            alt={product.routineName}
+            className="w-full h-full object-cover blur-[3px]"
+          />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── Headline labels tied to carousel index ──────────────
+// 0 = overview card, 1-5 = concern cards
+const HEADLINE_LABELS = ["85+ factors", "Dryness", "Skin Maturity", "Oiliness", "Skin Barrier", "Hyperpigmentation"];
+
+// Module-level flag — impossible for closures to miss this
+let _autoPlayDead = false;
+
+// ─── Results Page ─────────────────────────────────────────
+export default function Results() {
+  const navigate = useNavigate();
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [loaded, setLoaded] = useState(false);
+  const [loadingPhase, setLoadingPhase] = useState(-1); // -1=grey, 0-4=concerns, 5=all
+  const [scoreCount, setScoreCount] = useState(0);
+
+  const autoPlayTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const carouselWrapperRef = useRef<HTMLDivElement>(null);
+
+  // Reset module flag on mount (for HMR / navigation)
+  useEffect(() => {
+    _autoPlayDead = false;
+    return () => { _autoPlayDead = false; };
+  }, []);
+
+  // Loading sequence: cycle through all concern phases before showing carousel
+  useEffect(() => {
+    // Phase -1 (grey dots) for 1200ms, then cycle each concern for 1500ms each
+    const phaseDelay = 640; // 80% of 800ms bar animation = overlap feel
+    const initialDelay = 1200;
+    const totalPhases = 5; // 0-4 concerns only (no overview phase)
+
+    let countIntervalRef: ReturnType<typeof setInterval> | null = null;
+    let phaseIntervalRef: ReturnType<typeof setInterval> | null = null;
+
+    const startTimer = setTimeout(() => {
+      // Count from 1 → 85 across the concern phases
+      const target = 85;
+      const countDuration = totalPhases * phaseDelay;
+      const frameMs = countDuration / target;
+      let frame = 0;
+      countIntervalRef = setInterval(() => {
+        frame++;
+        setScoreCount(frame);
+        if (frame >= target) clearInterval(countIntervalRef!);
+      }, frameMs);
+
+      setLoadingPhase(0); // Start first concern
+      let phase = 1;
+      phaseIntervalRef = setInterval(() => {
+        if (phase < totalPhases) {
+          setLoadingPhase(phase);
+          phase++;
+        } else {
+          clearInterval(phaseIntervalRef!);
+          // After last concern shows for a beat, transition to carousel
+          setTimeout(() => {
+            setLoaded(true);
+          }, 800);
+        }
+      }, phaseDelay);
+    }, initialDelay);
+
+    return () => {
+      clearTimeout(startTimer);
+      if (countIntervalRef) clearInterval(countIntervalRef);
+      if (phaseIntervalRef) clearInterval(phaseIntervalRef);
+    };
+  }, []);
+
+  // Auto-play: after loaded, cycle through cards with loop
+  useEffect(() => {
+    if (!loaded) return;
+
+    const totalCards = analysisMetrics.length + 1;
+
+    function tick() {
+      console.log("[TICK] _autoPlayDead:", _autoPlayDead, "timer:", autoPlayTimer.current);
+      if (_autoPlayDead) { console.log("[TICK] dead, stopping"); return; }
+      setActiveIndex((prev) => (prev + 1) % totalCards);
+      autoPlayTimer.current = window.setTimeout(tick, 3500);
+    }
+
+    autoPlayTimer.current = window.setTimeout(tick, 3500);
+
+    return () => {
+      if (autoPlayTimer.current) window.clearTimeout(autoPlayTimer.current);
+    };
+  }, [loaded]);
+
+  // Kill auto-play when user interacts with carousel
+  const killAutoPlay = useCallback(() => {
+    console.log("[KILL] killAutoPlay called, _autoPlayDead was:", _autoPlayDead);
+    if (_autoPlayDead) return;
+    _autoPlayDead = true;
+    if (autoPlayTimer.current) {
+      console.log("[KILL] clearing timer", autoPlayTimer.current);
+      window.clearTimeout(autoPlayTimer.current);
+      autoPlayTimer.current = null;
+    }
+    // Enable CSS snap for user scrolling
+    const scrollEl = carouselWrapperRef.current?.querySelector("[data-carousel-scroll]");
+    if (scrollEl) {
+      (scrollEl as HTMLElement).style.scrollSnapType = "x mandatory";
+    }
+  }, []);
+
+  // Track index from user scroll (just update state, don't stop auto-play)
+  const handleIndexChange = useCallback((index: number) => {
+    setActiveIndex(index);
+  }, []);
+
+  // Dot phase: during loading = sync with loadingPhase, after loaded = activeIndex
+  // index 0 = overview (all dots colored = phase 5), indices 1-5 = concern phases 0-4
+  const dotPhase = !loaded ? loadingPhase : (activeIndex === 0 ? 5 : activeIndex - 1);
+  // Headline: counting "N+ factors" during loading, then tied to active card after loaded
+  const headlineText = !loaded
+    ? "85+ factors"
+    : HEADLINE_LABELS[Math.min(activeIndex, 5)];
+
+  return (
+    <div className="bg-[#f9f7f2] flex flex-col items-start relative min-h-screen w-full max-w-[375px] mx-auto">
+      {/* Navigation */}
+      <div className="flex flex-col items-center w-full shrink-0">
+        <div className="h-[95px] relative w-full shrink-0">
+          <div className="absolute bg-[#323429] inset-[0_0_57.89%_0]" />
+          <div className="absolute bg-white inset-[42.11%_0_0_0] shadow-[0px_2px_3px_0px_rgba(234,234,234,0.5)]" />
+          <p className="absolute font-['Simplon_Norm',sans-serif] inset-[9.47%_6.4%_67.37%_6.4%] leading-[1.5] text-[12px] text-center text-white tracking-[0.24px] underline whitespace-nowrap">
+            {`500k 5-star Prose product reviews on Review & Refine`}<span>®</span>
+          </p>
+          <div className="absolute inset-[58.95%_0_0_0] flex items-center justify-center">
+            <ProseLogo />
+          </div>
+          <span className="absolute font-['Simplon_Norm',sans-serif] text-[#323429] text-[14px] tracking-[0.28px] left-[5.6%] top-[57.89%] mt-[8px] leading-[1.5] select-none">
+            ← Back
+          </span>
+        </div>
+      </div>
+
+      {/* Scrollable content */}
+      <div className="flex-1 overflow-y-auto w-full pb-[40px]">
+        {/* Hero */}
+        <div className="px-[24px] pt-[24px] pb-[8px] relative z-10">
+          <motion.h1
+            className="font-['Saol Text',serif] font-light text-[32px] text-[#323429] tracking-[-0.96px] leading-[1.1]"
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5 }}
+          >
+            Maggie, here's your <span className="whitespace-nowrap">in-depth</span> skin analysis, focused on{" "}
+            <span className="relative inline-block">
+              <span className="absolute bottom-[2px] left-0 right-0 h-[0.4em] bg-[#ecff92]" />
+              <AnimatePresence mode="wait">
+                <motion.span
+                  key={headlineText}
+                  className="relative"
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8 }}
+                  transition={{ duration: 0.35, ease: "easeInOut" }}
+                >
+                  {headlineText}
+                </motion.span>
+              </AnimatePresence>
+            </span>
+          </motion.h1>
+        </div>
+
+        {/* Dot Cloud Visualization — overlaps behind title */}
+        <motion.div
+          className="px-[24px] py-[6px] -mt-[35px] relative z-0"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.6, delay: 0.3 }}
+        >
+          <DotRingVisualization phase={dotPhase} loaded={loaded} />
+        </motion.div>
+
+        {/* Loading card / Carousel — stacked so carousel is always in position */}
+        <div className="relative">
+          {/* Carousel is always mounted — just hidden until loaded */}
+          <div style={{ opacity: loaded ? 1 : 0, transition: "opacity 0.5s ease-out" }}>
+            <p className="px-[24px] pt-[4px] pb-[8px] font-['Simplon_Norm',sans-serif] font-normal text-[12px] text-[#6C6C6C] tracking-[-0.5px] leading-[1.5]">
+              What you shared is now shaping your formula.
+            </p>
+            <div ref={carouselWrapperRef} className="pb-[16px]" onPointerDown={killAutoPlay} onTouchStart={killAutoPlay}>
+              <DetailCarousel
+                metrics={analysisMetrics}
+                activeIndex={activeIndex}
+                onIndexChange={handleIndexChange}
+                onKill={killAutoPlay}
+                onLoopStart={() => {}}
+                onLoopEnd={() => {}}
+              />
+            </div>
+          </div>
+
+          {/* Loading card overlays on top — identical to carousel's overview card */}
+          <AnimatePresence>
+            {!loaded && loadingPhase >= 0 && (
+              <motion.div
+                className="absolute inset-x-0 top-0 z-10 pointer-events-none"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.4, ease: "easeOut" }}
+              >
+                {/* Matches the "How your results..." text above carousel */}
+                <p className="px-[24px] pt-[4px] pb-[8px] font-['Simplon_Norm',sans-serif] font-normal text-[12px] text-[#6C6C6C] tracking-[-0.5px] leading-[1.5]">
+                  What you shared is now shaping your formula.
+                </p>
+                <div className="pl-[24px]">
+                  <div className="w-[295px] bg-white rounded-[14px] shadow-[0px_2px_12px_0px_rgba(0,0,0,0.06),0px_0.5px_2px_0px_rgba(0,0,0,0.04)] p-[20px] flex flex-col justify-start gap-[12px]">
+                    <div className="flex justify-between pl-[80px] mb-[-4px]">
+                      <p className="font-['Simplon_Norm',sans-serif] text-[10px] text-[#a0a090] tracking-[0.2px]">Low</p>
+                      <p className="font-['Simplon_Norm',sans-serif] text-[10px] text-[#a0a090] tracking-[0.2px] text-right">High</p>
+                    </div>
+                    <div className="h-[0.5px] bg-[#E2D9C2] ml-[80px]" />
+                    <div className="flex flex-col gap-[12px]">
+                      {analysisMetrics.map((metric, metricIdx) => {
+                        const shouldFill = loadingPhase >= metricIdx;
+                        return (
+                          <div key={metric.key} className="flex items-center gap-[8px] w-full">
+                            <p className="font-['Simplon_Mono',monospace] font-medium text-[10px] text-[#323429] tracking-[0.8px] uppercase w-[72px] shrink-0">
+                              {metric.label}
+                            </p>
+                            <div className="flex-1 h-[12px] bg-[#f1ece0] rounded-full relative overflow-hidden">
+                              <motion.div
+                                className="h-full rounded-full"
+                                style={{ backgroundColor: metric.color }}
+                                initial={{ width: 0 }}
+                                animate={{ width: shouldFill ? `${metric.value * 100}%` : 0 }}
+                                transition={{ duration: 0.8, ease: "easeOut" }}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div className="border-t border-[#E2D9C2] pt-[14px] mt-[4px]">
+                      <p className="font-['Simplon_Norm',sans-serif] text-[12px] text-[#323429] tracking-[0.24px] leading-[1.5]">
+                        Your consultation analyzed 85+ factors — from skin dryness to environmental stressors. Swipe to see how each one helps us personalize your formula.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+
+      </div>
+
+      {/* Sticky Footer */}
+      <motion.div
+        initial={{ y: 80 }}
+        animate={{ y: 0 }}
+        transition={{ duration: 0.3, ease: "easeInOut" }}
+        className="sticky bottom-0 left-0 w-full bg-white rounded-t-[10px] shadow-[0px_-2px_4px_0px_rgba(0,0,0,0.1)] pt-[16px] pb-[24px] z-10"
+      >
+        <div className="px-[24px] flex flex-col gap-[12px]">
+          <ProductThumbnails />
+          <motion.button
+            whileTap={{ scale: 0.98 }}
+            onClick={() => navigate("/routine")}
+            className="bg-[#323429] h-[44px] w-full rounded-[60px] flex items-center justify-center cursor-pointer"
+          >
+            <p className="font-['Simplon_Mono',monospace] font-medium text-[12px] text-white text-center tracking-[0.96px] uppercase">
+              MEET YOUR CUSTOM SKINCARE
+            </p>
+          </motion.button>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
